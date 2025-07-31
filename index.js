@@ -119,7 +119,7 @@
                 </div>
             </div>
         `;
-        $('#api_settings_content').append(html);
+        $('#extensions_settings').append(html);
 
         // Load settings into UI
         $('#auto-retry-enabled').prop('checked', settings.enabled);
