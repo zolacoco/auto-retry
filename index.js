@@ -4,7 +4,6 @@
         enabled: true,
         maxRetries: 3,
         retryDelay: 2000, // ms
-        retryableStatusCodes: [500, 503],
         exponentialBackoff: true,
         backoffMultiplier: 2,
     };
@@ -25,24 +24,9 @@
     }
 
     function isRetryableError(error) {
-        if (!error) return false;
-        const status = error.status || error.response?.status;
-        if (status && settings.retryableStatusCodes.includes(status)) {
-            return true;
-        }
-        if (error.message) {
-            const statusMatch = error.message.match(/status(?: code)? (\d+)/i);
-            if (statusMatch && settings.retryableStatusCodes.includes(parseInt(statusMatch[1], 10))) {
-                return true;
-            }
-            if (settings.retryableStatusCodes.some(code => error.message.includes(String(code)))) {
-                return true;
-            }
-        }
-        if (error.name === 'TypeError' && error.message.toLowerCase().includes('failed to fetch')) {
-            return true;
-        }
-        return false;
+        // Per user request, all errors are now considered retryable.
+        if (!error) return false; // Don't retry on null/undefined errors
+        return true;
     }
 
     function calculateRetryDelay(attempt) {
