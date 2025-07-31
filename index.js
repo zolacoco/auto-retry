@@ -1,5 +1,5 @@
 (function () {
-    const extensionName = "auto-retry-on-error-corrected";
+    const extensionName = "auto-retry-on-error-final";
     const defaultSettings = {
         enabled: true,
         maxRetries: 3,
@@ -9,7 +9,7 @@
     };
 
     let settings = {};
-    const originalFunctions = {};
+    const originalFetch = window.fetch;
 
     function getPluginSettings() {
         const context = SillyTavern.getContext();
@@ -36,45 +36,64 @@
         return settings.retryDelay;
     }
 
-    async function retryWrapper(originalFunction, args, functionName) {
-        if (!settings.enabled) {
-            return originalFunction.apply(this, args);
-        }
-
+    async function fetchRetryWrapper(url, options) {
         let lastError;
-        for (let attempt = 0; attempt < settings.maxRetries; attempt++) {
+        for (let attempt = 1; attempt <= settings.maxRetries + 1; attempt++) {
             try {
-                return await originalFunction.apply(this, args);
+                const response = await originalFetch(url, options);
+
+                if (!response.ok) {
+                    const error = new Error(`Server responded with status ${response.status}`);
+                    error.response = response;
+                    error.status = response.status;
+                    throw error;
+                }
+
+                if (attempt > 1) {
+                    toastr.success(`Request succeeded on attempt ${attempt}.`, "Auto Retry");
+                }
+                return response; // Success
+
             } catch (error) {
                 lastError = error;
+                const path = new URL(url, window.location.origin).pathname;
+
+                if (attempt > settings.maxRetries) {
+                    break; // This was the last attempt, exit loop to throw error
+                }
+
                 if (isRetryableError(error)) {
-                    const delay = calculateRetryDelay(attempt);
-                    toastr.info(`'${functionName}' failed. Retrying in ${delay / 1000}s... (Attempt ${attempt + 1}/${settings.maxRetries})`, "Auto Retry");
+                    const delay = calculateRetryDelay(attempt - 1);
+                    toastr.info(`Request to ${path} failed. Retrying in ${delay / 1000}s... (Attempt ${attempt + 1}/${settings.maxRetries + 1})`, "Auto Retry");
                     await new Promise(resolve => setTimeout(resolve, delay));
-                    continue;
                 } else {
-                    // Non-retryable error, break the loop and throw
-                    break;
+                    break; // Non-retryable error, exit loop to throw error
                 }
             }
         }
-        toastr.error(`'${functionName}' failed after ${settings.maxRetries} attempts.`, "Auto Retry Failed");
+
+        toastr.error(`Request failed after ${settings.maxRetries + 1} attempts.`, "Auto Retry Failed");
         throw lastError;
     }
 
-    function patchFunction(owner, functionName) {
-        if (typeof owner[functionName] === 'function') {
-            const original = owner[functionName];
-            // Avoid double-patching
-            if (original.isPatchedByAutoRetry) return;
+    const generationEndpoints = [
+        '/api/backends/kobold/generate',
+        '/api/backends/koboldhorde/generate',
+        '/api/backends/text-completions/generate',
+        '/api/novelai/generate',
+        '/api/backends/chat-completions/generate'
+    ];
 
-            originalFunctions[functionName] = original;
-            owner[functionName] = function(...args) {
-                return retryWrapper(original, args, functionName);
-            };
-            owner[functionName].isPatchedByAutoRetry = true;
-            console.log(`[AutoRetry] Patched ${functionName}`);
-        }
+    function patchGlobalFetch() {
+        window.fetch = async function (url, options) {
+            const path = new URL(url, window.location.origin).pathname;
+
+            if (settings.enabled && generationEndpoints.includes(path) && options?.method === 'POST') {
+                return fetchRetryWrapper(url, options);
+            } else {
+                return originalFetch(url, options);
+            }
+        };
     }
 
     function addSettingsUI() {
@@ -105,13 +124,11 @@
         `;
         $('#extensions_settings').append(html);
 
-        // Load settings into UI
         $('#auto-retry-enabled').prop('checked', settings.enabled);
         $('#auto-retry-max-retries').val(settings.maxRetries);
         $('#auto-retry-delay').val(settings.retryDelay);
         $('#auto-retry-exp-backoff').prop('checked', settings.exponentialBackoff);
 
-        // Add event listeners
         $('#auto-retry-enabled').on('change', function() { settings.enabled = $(this).is(':checked'); saveSettings(); });
         $('#auto-retry-max-retries').on('input', function() { settings.maxRetries = parseInt($(this).val(), 10); saveSettings(); });
         $('#auto-retry-delay').on('input', function() { settings.retryDelay = parseInt($(this).val(), 10); saveSettings(); });
@@ -121,16 +138,7 @@
     function onAppReady() {
         settings = getPluginSettings();
         addSettingsUI();
-
-        // Patch the core functions that send requests
-        patchFunction(window, 'sendGenerationRequest');
-        patchFunction(window, 'sendStreamingRequest');
-
-        // Some APIs have their own request functions, patch them too if they exist
-        // This requires checking for the existence of these functions as they might not always be loaded
-        if (window.openai) {
-            patchFunction(window.openai, 'sendOpenAIRequest');
-        }
+        patchGlobalFetch();
     }
 
     SillyTavern.getContext().eventSource.on(SillyTavern.getContext().event_types.APP_READY, onAppReady);
