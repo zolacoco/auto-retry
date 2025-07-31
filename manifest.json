@@ -1,8 +1,8 @@
 {
-  "display_name": "Auto Retry on Error",
-  "author": "Cline",
-  "version": "1.0.0",
-  "description": "Automatically retries requests that fail with a 500 or 503 error.",
+  "display_name": "Auto Retry on Error (Corrected)",
+  "author": "Cline (based on user design)",
+  "version": "2.0.0",
+  "description": "Automatically retries generation requests that fail with a server error (500, 503, etc.), based on the function-wrapping design.",
   "js": "index.js",
   "css": "style.css",
   "loading_order": 999
