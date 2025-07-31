@@ -1,0 +1,9 @@
+{
+  "display_name": "Auto Retry on Error",
+  "author": "Cline",
+  "version": "1.0.0",
+  "description": "Automatically retries requests that fail with a 500 or 503 error.",
+  "js": "index.js",
+  "css": "style.css",
+  "loading_order": 999
+}
